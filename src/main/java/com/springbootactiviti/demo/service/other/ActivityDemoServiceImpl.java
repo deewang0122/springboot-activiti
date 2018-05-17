@@ -1,4 +1,4 @@
-package com.springbootactiviti.demo.service;
+package com.springbootactiviti.demo.service.other;
 
 import org.activiti.bpmn.model.BpmnModel;
 import org.activiti.engine.HistoryService;
@@ -90,6 +90,7 @@ public class ActivityDemoServiceImpl {
 
     //流程节点权限用户列表${ActivityDemoServiceImpl.findUsers(execution,sign)}
     public List<String> findUsersForSL(DelegateExecution execution){
+
         return Arrays.asList("sly1","sly2");
     }
 

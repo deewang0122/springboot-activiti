@@ -1,10 +1,11 @@
 package com.springbootactiviti.demo;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.springbootactiviti.demo.dao.UserRepository;
+import com.springbootactiviti.demo.service.borrow.BorrowApplyService;
+import com.springbootactiviti.demo.vo.FunderCompany;
+import com.springbootactiviti.demo.vo.User;
+import com.springbootactiviti.demo.vo.loan.LoanBill;
 import org.activiti.engine.*;
-import org.activiti.engine.history.HistoricProcessInstance;
-import org.activiti.engine.history.HistoricTaskInstance;
 import org.activiti.engine.repository.Deployment;
 import org.activiti.engine.runtime.ProcessInstance;
 import org.activiti.engine.task.Task;
@@ -20,7 +21,11 @@ import java.util.Map;
 
 @RunWith(SpringRunner.class)
 @SpringBootTest
-public class LoanDemoTest {
+public class EasyLoanDemoTest {
+    @Autowired
+    private UserRepository userRepository;
+    @Autowired
+    private BorrowApplyService borrowApplyService;
     @Autowired
     private RepositoryService repositoryService;
     @Autowired
@@ -32,34 +37,124 @@ public class LoanDemoTest {
     @Autowired
     private HistoryService historyService;
 
+
+    @Test
+    public void deleteProcessDefi(){
+        //通过部署id来删除流程定义
+        String deploymentId="42501";
+        processEngine.getRepositoryService().deleteDeployment(deploymentId);
+    }
+
+
     /**
     *   部署流程
     * */
     @Test
-    public void deploy() {
-        //根据bpmn文件部署流程
-        Deployment deployment = repositoryService.createDeployment().addClasspathResource("processes/demo5.bpmn").deploy();
+    public void deploy1() {
 
-        System.out.println("deployment.getId()+deployment.getName()+deployment.getCategory() = "
-                + deployment.getId()    //1
-                + deployment.getName()
-                + deployment.getCategory());
+        //根据bpmn文件部署流程
+        Deployment deployment = repositoryService.createDeployment()
+                .addClasspathResource("processes/demo8.bpmn")
+                .deploy();
+
+        System.out.println("deploy id : "
+                + deployment.getId()    //42501
+                +" deploy name : "+ deployment.getName()  //车商借款流程
+                +" deploy category : "+ deployment.getCategory());    //融资类别
     }
+
+    @Test
+    public void deploy() {
+
+        //获取仓库服务 ：管理流程定义
+        RepositoryService repositoryService = processEngine.getRepositoryService();
+        Deployment deploy = repositoryService.createDeployment()//创建一个部署的构建器
+                .addClasspathResource("processes/demo8.bpmn")//从类路径中添加资源,一次只能添加一个资源
+                .name("借款申请流程")         //设置部署的名称
+                .category("借款/还款类别")        //设置部署的类别
+                .deploy();
+
+        System.out.println("部署的id： "+deploy.getId());
+        System.out.println("部署的名称： "+deploy.getName());
+    }
+
     /**
      *  启动流程示例
      * */
     @Test
     public void startProcessInstance() {
+        ProcessEngine processEngine = ProcessEngines.getDefaultProcessEngine();
+
         // 流程定义的key
-        String processDefinitionKey = "loan_demo_process";
+        String processDefinitionKey = "easy_loan_v3";
         ProcessInstance pi = processEngine.getRuntimeService()// 与正在执行的流程实例和执行对象相关的Service
                                 .startProcessInstanceByKey(processDefinitionKey);// 使用流程定义的key启动流程实例
 
-        System.out.println("流程实例ID:" + pi.getId());// 流程实例ID:    2501，15001
-        System.out.println("流程定义ID:" + pi.getProcessDefinitionId());// 流程定义ID:  loan_demo_process:1:4，loan_demo_process:1:4
-        System.out.println("流程定义key:" + pi.getProcessDefinitionKey());//loan_demo_process，loan_demo_process
+        System.out.println("流程实例ID:" + pi.getId());// 流程实例ID:    10001
+        System.out.println("流程定义ID:" + pi.getProcessDefinitionId());// 流程定义ID:  easy_loan_v3:1:7504
+        System.out.println("流程定义key:" + pi.getProcessDefinitionKey());//easy_loan_v3
         System.out.println("流程定义name:" + pi.getName());
+
+        //申请借款
+        LoanBill loanBill = new LoanBill();
+        {
+            loanBill.setFunderCompany(new FunderCompany(1L));
+            loanBill.setActivitiProcessInstanceId(pi.getProcessInstanceId());
+            loanBill.setMoney(10.0);
+            loanBill.setUser(new User(1L));
+        }
+
+        borrowApply(loanBill);
+
     }
+
+
+    private void borrowApply(LoanBill loanBill) {
+        Task task=taskService.createTaskQuery()
+                .processInstanceId(loanBill.getActivitiProcessInstanceId())
+                .singleResult();
+        Map<String, Object> variables = new HashMap<String, Object>();
+
+        variables.put("loanBill", loanBill);
+
+        processEngine.getTaskService()
+                .complete(task.getId());
+
+        System.out.println("受理借款任务：任务ID：" + task.getId()+"; "+task.getName());
+    }
+
+    //submitted
+    @Test
+    public void borrowSubmitted() {
+        String processInstanceId = "";
+        Task task=taskService.createTaskQuery().processInstanceId(processInstanceId).singleResult();
+
+        Map<String, Object> variables = new HashMap<String, Object>();
+        variables.put("status", "false");
+        processEngine.getTaskService()
+                .complete(task.getId(), variables);
+        System.out.println("借款审核：任务ID：" + task.getId()+"; "+task.getName());
+    }
+
+
+
+
+    @Test
+    public void test3() {
+        String userId = "1";
+        List<Task> list = processEngine.getTaskService()
+                .createTaskQuery()
+                .taskCandidateUser(userId)
+                .list();
+
+        list.forEach(task -> {
+            System.out.println("task.getName() = " + task.getName());
+            System.out.println("task.getId() = " + task.getId());
+        });
+    }
+
+
+
     /**
     *   执行任务-申请借款
     * */
@@ -194,56 +289,9 @@ public class LoanDemoTest {
 
     }
 
-    /**
-     *  历史流程实例查询
-     *  http://blog.csdn.net/luckyzhoustar/article/details/48652783
-     */
-    @Test
-    public void findHistoricProcessInstance() {
-        // 查询已完成的流程
-        List<HistoricProcessInstance> datas = historyService
-                .createHistoricProcessInstanceQuery().finished().list();
-        System.out.println("统计完成的流程：（使用finished方法）：" + datas.size());
-        datas.forEach(data -> {
-            try {
-                System.out.println("finished流程" + new ObjectMapper().writeValueAsString(data));
-            } catch (JsonProcessingException e) {
-                e.printStackTrace();
-            }
-        });
-        // 查询未完成的流程
-        List<HistoricProcessInstance> unFinishedDatas = historyService
-                .createHistoricProcessInstanceQuery().unfinished().list();
-        System.out.println("统计未完成的流程：（unFinishedDatas）：" + datas.size());
-        unFinishedDatas.forEach(data -> {
-            try {
-                System.out.println("unFinishedDatas流程" + new ObjectMapper().writeValueAsString(data));
-            } catch (JsonProcessingException e) {
-                e.printStackTrace();
-            }
-        });
-
-        // 根据流程定义ID查询
-        datas = historyService.createHistoricProcessInstanceQuery()
-                .processDefinitionId("loan_demo_process:1:4").list();
-
-        datas.forEach(data -> {
-            try {
-                System.out.println(new ObjectMapper().writeValueAsString(data));
-            } catch (JsonProcessingException e) {
-                e.printStackTrace();
-            }
-        });
-
-        //根据processInstanceId查询流程详情
-        List<HistoricTaskInstance> datas2 = historyService.createHistoricTaskInstanceQuery()
-                .processInstanceId("15001").list();//2501，15001
-        datas2.forEach(data -> {
-            try {
-                System.out.println("datas2 = " + new ObjectMapper().writeValueAsString(data));
-            } catch (JsonProcessingException e) {
-                e.printStackTrace();
-            }
-        });
-    }
+   @Test
+    public void test12() {
+        List<User> users = borrowApplyService.test();
+        System.out.println(users.size());
+   }
 }
